@@ -1,26 +1,24 @@
 package com.castis.muxertest;
 
-import android.Manifest;
-import android.annotation.TargetApi;
 import android.content.Context;
-import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.hardware.Camera;
-import android.os.Build;
+import android.media.MediaCodec;
+import android.media.MediaMuxer;
 import android.util.Log;
 import android.view.SurfaceHolder;
-import android.widget.Toast;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.List;
 
 public class CamaraWrapper implements SurfaceHolder.Callback {
 
     private final String TAG = "VideoEncoderFromBuffer";
-    private final int MY_PERMISSION_REQUEST_STORAGE = 100;
     public final static int VWIDTH = 640;
-    public final static int VHEIGHT = 480;
 
-    private Context context;
+    public final static int VHEIGHT = 480;
 
     private Camera camera = null;
 
@@ -30,52 +28,35 @@ public class CamaraWrapper implements SurfaceHolder.Callback {
 
     private CameraPreviewCallback cameraPreviewCallback;
 
-    public CamaraWrapper(Context c) {
-        this.context = c;
-        checkPermission();
-    }
+    private MediaMuxer mMuxer;
 
-    /**
-     * Permission check.
-     */
-    @TargetApi(Build.VERSION_CODES.M)
-    private void checkPermission() {
-        Log.i(TAG, "CheckPermission : " + context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE));
-        if (context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-                || context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-                || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
-                || context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+    private Encoder encoder;
 
-            // Should we show an explanation?
-            if (((MainActivity) context).shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
-                // Explain to the user why we need to write the permission.
-                Toast.makeText(context, "Read/Write external storage", Toast.LENGTH_SHORT).show();
-            }
+    private VideoEncoderFromBuffer videoEncoderFromBuffer;
 
-            ((MainActivity) context).requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO},
-                    MY_PERMISSION_REQUEST_STORAGE);
-        } else {
-            Log.e(TAG, "permission deny");
-        }
+    private AudioEncoderFromBuffer audioEncoderFromBuffer;
+
+    private long mStartTime = 0;
+
+    private int videoIndex = -1, audioIndex = -1;
+
+    public boolean isStop = false;
+
+    public CamaraWrapper() {
     }
 
     public Camera open(int cameraId, int imageFormat, SurfaceHolder holder) {
         camera = Camera.open(cameraId);
         Camera.Parameters parameters = camera.getParameters();
-
         parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
         parameters.setWhiteBalance(Camera.Parameters.WHITE_BALANCE_AUTO);
         parameters.setSceneMode(Camera.Parameters.SCENE_MODE_AUTO);
         parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
         parameters.setPreviewFormat(imageFormat);
-        parameters.set("orientation", "portrait");
-//        parameters.set("orientation", "landscape");
         parameters.setRotation(180);
-
-        //parameters.setPreviewFormat(PixelFormat.YCbCr_420_SP);
+        parameters.set("orientation", "portrait"); // landscape
 
         Camera.Size size = null;
-
         List<Camera.Size> sizes = parameters.getSupportedPictureSizes();
         for (int i = 0; i < sizes.size(); i++) {
             Camera.Size s = sizes.get(i);
@@ -99,19 +80,61 @@ public class CamaraWrapper implements SurfaceHolder.Callback {
         parameters.setPreviewSize(size.width, size.height);
         camera.setParameters(parameters);
 
-//        holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-//        holder.addCallback(this);
+        holder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        holder.addCallback(this);
 
         cameraPreviewCallback = new CameraPreviewCallback();
 
-        Log.i(TAG, "oenEnd");
+        encoder = new Encoder() {
+            @Override
+            public void writeSampleData(int trackIndex, ByteBuffer writeByteBuffer, MediaCodec.BufferInfo bufferInfo) {
+                Log.i(TAG, "Encoder writeSampleData trackIndex : " + trackIndex
+                        + " / writeByteBuffer : " + writeByteBuffer.toString()
+                        + " / bufferInfo : " + bufferInfo.toString());
+                mMuxer.writeSampleData(trackIndex, writeByteBuffer, bufferInfo);
+            }
 
+            @Override
+            public MediaMuxer getMuxer() {
+                return mMuxer;
+            }
+        };
+
+        isStop = true;
+
+        Log.i(TAG, "oenEnd");
         return camera;
+    }
+
+    public void build() {
+        mStartTime = System.nanoTime();
+//        audioEncoderFromBuffer = new AudioEncoderFromBuffer(mStartTime);
+        videoEncoderFromBuffer = new VideoEncoderFromBuffer(mStartTime, encoder, vSize);
+
+        File file = Util.getOutputMediaFile("h264", "mp4");
+        Log.i(TAG, "Output FileName : " + file.getName());
+
+        try {
+            mMuxer = new MediaMuxer(file.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        } catch (IOException ioe) {
+            throw new RuntimeException("MediaMuxer creation failed", ioe);
+        }
+
+//        audioEncoderFromBuffer.setTrackIndex(mMuxer.addTrack(audioEncoderFromBuffer.getAudioCodec().getOutputFormat()));
+        videoEncoderFromBuffer.setTrackIndex(mMuxer.addTrack(videoEncoderFromBuffer.getaMediaCodec().getOutputFormat()));
+        Camera.Parameters parameters = camera.getParameters();
+        callbackBuffer = null;
+        callbackBuffer = new byte[parameters.getPreviewSize().width *
+                parameters.getPreviewSize().height *
+                ImageFormat.getBitsPerPixel(parameters.getPreviewFormat()) / 8];
+        camera.addCallbackBuffer(callbackBuffer);
+        camera.setPreviewCallbackWithBuffer(cameraPreviewCallback);
+        isStop = false;
     }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        Log.i(TAG, "surfaceCreated");
+        Log.i(TAG, "surfaceCreated============");
         try {
             camera.unlock();
             camera.reconnect();
@@ -126,15 +149,9 @@ public class CamaraWrapper implements SurfaceHolder.Callback {
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         Log.i(TAG, "surfaceChanged format : " + Integer.toString(format, 16) + " / width : " + width + " / height : " + height);
         if (camera != null) {
-            vSize.width = width;
-            vSize.height = height;
-            Camera.Parameters parameters = camera.getParameters();
-            callbackBuffer = null;
-            callbackBuffer = new byte[parameters.getPreviewSize().width *
-                    parameters.getPreviewSize().height *
-                    ImageFormat.getBitsPerPixel(parameters.getPreviewFormat()) / 8];
-            camera.addCallbackBuffer(callbackBuffer);
-            camera.setPreviewCallbackWithBuffer(cameraPreviewCallback);
+//            vSize.width = width;
+//            vSize.height = height;
+
 //            camera.setPreviewCallback(cameraPreviewCallback);
         }
     }
@@ -146,38 +163,35 @@ public class CamaraWrapper implements SurfaceHolder.Callback {
 
     class CameraPreviewCallback implements Camera.PreviewCallback {
 
-        public boolean isStop = false;
-
-        private VideoEncoderFromBuffer videoEncoder = null;
-
-        public CameraPreviewCallback() {
-            videoEncoder = new VideoEncoderFromBuffer(vSize);
-        }
-
         public void close() {
             isStop = true;
-            videoEncoder.close();
+            videoEncoderFromBuffer.close();
+
+            camera.addCallbackBuffer(null);
+            camera.setPreviewCallbackWithBuffer(null);
+
+            try {
+                Log.i(TAG, "mMuxer close()");
+                mMuxer.stop();
+                mMuxer.release();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         @Override
         public void onPreviewFrame(byte[] data, Camera camera) {
             Log.i(TAG, "onPreviewFrame " + data.toString());
-            if (isStop)
-                return;
 
             Camera.Parameters parameters = camera.getParameters();
             int format = parameters.getPreviewFormat();
-//            ImageFormat
 
             Log.i(TAG, "format : " + Integer.toString(format, 16));
 
-            /*Bitmap bm = Util.decodeNV21(data, parameters);
-            File file = Util.getOutputMediaFile("bitmpa", "bitmap.jpg");
-            Util.SaveBitmapToFileCache(bm, file.getAbsolutePath());*/
-
             long startTime = System.currentTimeMillis();
-            videoEncoder.encodeFrame(data/*, encodeData*/);
-//            videoEncoder.encodeFrame(data, parameters);
+            if (!isStop)
+                videoEncoderFromBuffer.encodeFrame(data/*, encodeData*/);
+
             long endTime = System.currentTimeMillis();
             Log.i(TAG, Integer.toString((int) (endTime - startTime)) + "ms");
             camera.addCallbackBuffer(data);
@@ -185,14 +199,15 @@ public class CamaraWrapper implements SurfaceHolder.Callback {
     }
 
     public void close() {
+        isStop = true;
         cameraPreviewCallback.close();
     }
 
-    public Camera.Size getSize(){
+    public Camera.Size getSize() {
         return vSize;
     }
 
-    public CameraPreviewCallback getPreviewCallback(){
+    public CameraPreviewCallback getPreviewCallback() {
         return cameraPreviewCallback;
     }
 

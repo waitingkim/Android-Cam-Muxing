@@ -2,6 +2,7 @@ package com.castis.muxertest;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
 import android.graphics.ImageFormat;
 import android.hardware.Camera;
 import android.os.AsyncTask;
@@ -12,9 +13,8 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.widget.Button;
-import android.widget.VideoView;
 
-public class MainActivity extends Activity implements SurfaceHolder.Callback {
+public class MainActivity extends Activity {
 
     // video device.
     public final static int VWIDTH = 640;
@@ -43,9 +43,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     Handler mHandler;
 
+    boolean isRec = false;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        Log.i(TAG, "///////////////////onCreate()");
+        Log.i(TAG, "========================================================");
+        Log.i(TAG, "======================  onCreate  ======================");
+        Log.i(TAG, "========================================================");
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         videoView = findViewById(R.id.videoView);
@@ -53,59 +57,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         btnStart = findViewById(R.id.btnS);
         btnEnd = findViewById(R.id.btnE);
         context = this;
-
-        mHandler = new Handler();
-
-        final Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() { // UI 작업 수행 X
-                mHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        // UI 작업 수행 O
-                        startCamera();
-                    }
-                });
-            }
-        });
-//        t.start();
-
-
+        Util.checkPermission(context, 100);
 
         btnStart.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-            t.start();
-//                ((MainActivity)context).runOnUiThread(new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        try {
-//                            startCamera();
-//                        }
-//                        catch (Exception e) {
-//                            e.printStackTrace();
-//                        }
-//                    }
-//                });
-
-//                HandlerThread t = new HandlerThread("My Handler Thread");
-//                t.start();
-//                mHandler = new Handler(t.getLooper());
-
-
                 startCamera();
-
-//                camaraWrapper = new CamaraWrapper(context);
-//                camaraWrapper.open(0, ImageFormat.NV21, videoView.getHolder());
-//                mediaPrepareTask.execute();
             }
         });
-
-        camaraWrapper = new CamaraWrapper(this);
-        camera = camaraWrapper.open(0, ImageFormat.NV21, surfaceHolder);
-        size = camaraWrapper.getSize();
-        surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-        surfaceHolder.addCallback(this);
 
         btnEnd.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -117,56 +76,58 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             }
         });
 
-//        this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        camaraWrapper = new CamaraWrapper();
+        camera = camaraWrapper.open(0, ImageFormat.NV21, surfaceHolder);
+        size = camaraWrapper.getSize();
 
-//        camaraWrapper = new CamaraWrapper(this);
-//        camaraWrapper.open(0, ImageFormat.NV21, videoView.getHolder());
+//        surfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+//        surfaceHolder.addCallback(this);
+
+        this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     @Override
     protected void onPause() {
-        Log.i(TAG, "///////////////////onPause()");
+        Log.i(TAG, "========================================================");
+        Log.i(TAG, "=======================  onPause  ======================");
+        Log.i(TAG, "========================================================");
         super.onPause();
-//        camaraWrapper.close();
     }
 
     @Override
     protected void onResume() {
-        Log.i(TAG, "///////////////////onResume()");
+        Log.i(TAG, "========================================================");
+        Log.i(TAG, "=======================  onResume  =====================");
+        Log.i(TAG, "========================================================");
         super.onResume();
-
-//        camaraWrapper = new CamaraWrapper(this);
-//        camaraWrapper.open(0, ImageFormat.NV21, surfaceHolder);
     }
 
     private void startCamera() {
-//        camaraWrapper = new CamaraWrapper(this);
-//        camaraWrapper.open(0, ImageFormat.NV21, videoView.getHolder());
-
-//        videoView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-//        videoView.getHolder().addCallback(camaraWrapper);
-
-
-        camera.startPreview();
+        isRec = true;
+        camaraWrapper.build();
     }
 
-    @Override
+//    @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        Log.i(TAG, "Main surfaceCreated");
+        Log.i(TAG, "========================================================");
+        Log.i(TAG, "===================  surfaceCreated  ===================");
+        Log.i(TAG, "========================================================");
         try {
             camera.unlock();
             camera.reconnect();
             camera.setPreviewDisplay(holder);
-//            camera.startPreview();
+            camera.startPreview();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    @Override
+//    @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        Log.i(TAG, "Main surfaceChanged");
-        if (camera != null) {
+        Log.i(TAG, "========================================================");
+        Log.i(TAG, "===================  surfaceChanged  ===================");
+        Log.i(TAG, "========================================================");
+        if (camera != null && isRec) {
             size.width = width;
             size.height = height;
             Camera.Parameters parameters = camera.getParameters();
@@ -176,12 +137,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
                     ImageFormat.getBitsPerPixel(parameters.getPreviewFormat()) / 8];
             camera.addCallbackBuffer(callbackBuffer);
             camera.setPreviewCallbackWithBuffer(camaraWrapper.getPreviewCallback());
-//            camera.setPreviewCallback(cameraPreviewCallback);
         }
     }
 
-    @Override
+//    @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        Log.i(TAG, "========================================================");
+        Log.i(TAG, "===================  surfaceDestroyed  ==================");
+        Log.i(TAG, "========================================================");
 
     }
 
@@ -190,8 +153,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         @Override
         protected Boolean doInBackground(Void... voids) {
             // initialize video camera
-            camaraWrapper = new CamaraWrapper(context);
-            camaraWrapper.open(0, ImageFormat.NV21, videoView.getHolder());
+//            camaraWrapper = new CamaraWrapper(context);
+//            camaraWrapper.open(0, ImageFormat.NV21, videoView.getHolder());
             return true;
         }
 

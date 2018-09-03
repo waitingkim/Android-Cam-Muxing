@@ -1,8 +1,7 @@
-package com.castis.muxertest;
+package com.castis.muxertest.origin;
 
 import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
-import android.graphics.Camera;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
@@ -10,6 +9,10 @@ import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.os.Environment;
 import android.util.Log;
+
+import com.castis.muxertest.MainActivity;
+import com.castis.muxertest.NV21Convertor;
+import com.castis.muxertest.Util;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -20,41 +23,35 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 
-public class VideoEncoderFromBuffer {
+public class VideoEncoderFromBuffer2 {
 
     private static final String TAG = "VideoEncoderFromBuffer";
     private static final boolean VERBOSE = true; // lots of logging
-    private static final String DEBUG_FILE_NAME_BASE = "/sdcard/Movies/h264";
+
     // parameters for the encoder
     private static final String MIME_TYPE = "video/avc"; // H.264 Advanced Video
     private static final int FRAME_RATE = 30; // 15fps
     private static final int IFRAME_INTERVAL = FRAME_RATE; // 10 between
+
     // I-frames
     private static final int TIMEOUT_USEC = 10000;
     private static final int COMPRESS_RATIO = 256;
     private static final int BIT_RATE = MainActivity.VHEIGHT * MainActivity.VWIDTH * 3 * 8 * FRAME_RATE / COMPRESS_RATIO; // bit rate CameraWrapper.
-    private int mWidth;
-    private int mHeight;
-    private MediaCodec aMediaCodec;
     private MediaCodec mMediaCodec;
-    private MediaMuxer mMuxer;
+//    private MediaMuxer mMuxer;
     private MediaCodec.BufferInfo mBufferInfo;
     private int mTrackIndex = -1;
-    private int mATrackIndex = -1;
     private boolean mMuxerStarted;
     byte[] mFrameData;
-    FileOutputStream mFileOutputStream = null;
     private int mColorFormat;
     private long mStartTime = 0;
 
     private int vcolor;
     private MediaCodecInfo vmci;
     private static final String VCODEC = "video/avc";
-    private int trackIndex;
-    private Encoder encoderCallback;
-
-    android.hardware.Camera.Size vsize;
     NV21Convertor mNV21 = null;
+
+    private EncoderCallback encoderCallback;
 
     private int chooseVideoEncoder() {
         // choose the encoder "video/avc":
@@ -115,6 +112,33 @@ public class VideoEncoderFromBuffer {
         return def;
     }
 
+    public File getOutputMediaFile() {
+        // To be safe, you should check that the SDCard is mounted
+        // using Environment.getExternalStorageState() before doing this.
+        if (!Environment.getExternalStorageState().equalsIgnoreCase(Environment.MEDIA_MOUNTED)) {
+            return null;
+        }
+
+        File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "h264");
+
+        // Create the storage directory if it does not exist
+        if (!mediaStorageDir.exists()) {
+            if (!mediaStorageDir.mkdirs()) {
+                Log.d(TAG, "failed to create directory");
+                return null;
+            }
+        }
+
+        // Create a media file name
+        String timeStamp = new SimpleDateFormat("yyyyMMddmmss", Locale.US).format(new Date());
+        File mediaFile;
+        mediaFile = new File(mediaStorageDir.getPath() + File.separator + this.vsize.width + "x" + this.vsize.height + timeStamp + ".mp4");
+
+        return mediaFile;
+    }
+
+    android.hardware.Camera.Size vsize;
+
     private int selectColorFormat(String mimeType) {
         MediaCodecInfo codecInfo = selectCodec(mimeType);
         int colorFormat = 0;
@@ -130,12 +154,8 @@ public class VideoEncoderFromBuffer {
     }
 
     @SuppressLint("NewApi")
-    public VideoEncoderFromBuffer(long startTime, Encoder callback, android.hardware.Camera.Size size) {
+    public VideoEncoderFromBuffer2(android.hardware.Camera.Size size, long mStartTime) {
         Log.i(TAG, "VideoEncoder()");
-
-//        this.mStartTime = startTime;
-        mStartTime = System.nanoTime();
-        this.encoderCallback = callback;
         this.vsize = size;
 
         mFrameData = new byte[this.vsize.width * this.vsize.height * 3 / 2];
@@ -156,6 +176,7 @@ public class VideoEncoderFromBuffer {
         if (VERBOSE)
             Log.d(TAG, "found colorFormat: " + mColorFormat + " / vcolor : " + vcolor);
 
+//        mColorFormat = vcolor;
         mColorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar;
 
         MediaFormat mediaFormat = MediaFormat.createVideoFormat(MIME_TYPE, this.vsize.width, this.vsize.height);
@@ -172,20 +193,16 @@ public class VideoEncoderFromBuffer {
         mMediaCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
         mMediaCodec.start();
 
-/*
         File file = getOutputMediaFile();
         Log.i(TAG, "videofile: " + file.getName());
+        this.mStartTime = mStartTime;
+        /** mStartTime = System.nanoTime();*/
 
-        try {
+        /*try {
             mMuxer = new MediaMuxer(file.getAbsolutePath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         } catch (IOException ioe) {
             throw new RuntimeException("MediaMuxer creation failed", ioe);
-        }
-
-        mATrackIndex = mMuxer.addTrack(aMediaCodec.getOutputFormat());
-        Log.i(TAG, "mATrackIndex: " + mATrackIndex);
-*/
-
+        }*/
         mTrackIndex = -1;
         mMuxerStarted = false;
 
@@ -196,22 +213,32 @@ public class VideoEncoderFromBuffer {
         mNV21.setStride(this.vsize.width);
         mNV21.setYPadding(0);
         mNV21.setEncoderColorFormat(mColorFormat);
-
     }
 
-    public MediaCodec getaMediaCodec(){
-        return mMediaCodec;
+    public void bitmapToFile(byte[] input, android.hardware.Camera.Parameters parameters) {
+        Log.i(TAG, "encodeFrame()");
+        long encodedSize = 0;
+
+        if (mColorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar) {
+            YV12toYUV420Planar(input, mFrameData, vsize.width, vsize.height);
+        } else if (mColorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedPlanar) {
+            YV12toYUV420PackedSemiPlanar(input, mFrameData, vsize.width, vsize.height);
+        } else if (mColorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar) {
+            YV12toYUV420PackedSemiPlanar(input, mFrameData, vsize.width, vsize.height);
+        } else {
+            System.arraycopy(input, 0, mFrameData, 0, mFrameData.length);
+        }
+
+        Bitmap bm = Util.decodeNV21(input, parameters);
+        File file = Util.getOutputMediaFile("bitmpa", "bitmap2.jpg");
+        Util.SaveBitmapToFileCache(bm, file.getAbsolutePath());
     }
 
     public void encodeFrame(byte[] input/* , byte[] output */) {
         Log.i(TAG, "encodeFrame()");
-
-        if(input == null)
-            return;
-
         long encodedSize = 0;
-        Log.i(TAG, "encodeFrame() " + mFrameData.toString() + " / " + mFrameData.length);
 
+        Log.i(TAG, "encodeFrame() " + mFrameData.toString() + " / " + mFrameData.length);
         ByteBuffer[] inputBuffers = mMediaCodec.getInputBuffers();
         ByteBuffer[] outputBuffers = mMediaCodec.getOutputBuffers();
         int inputBufferIndex = mMediaCodec.dequeueInputBuffer(TIMEOUT_USEC);
@@ -223,9 +250,6 @@ public class VideoEncoderFromBuffer {
             Log.i(TAG, "resentationTime: " + ptsUsec);
             mNV21.convert(input, inputBuffers[inputBufferIndex]);
             ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
-//            inputBuffer.clear();
-//            inputBuffer.put(mFrameData);
-
             mMediaCodec.queueInputBuffer(inputBufferIndex, 0, inputBuffer.capacity(), System.nanoTime() / 1000, 0);
         } else {
             // either all in use, or we timed out during initial setup
@@ -253,11 +277,10 @@ public class VideoEncoderFromBuffer {
 
                 // now that we have the Magic Goodies, start the muxer
                 /*mTrackIndex = mMuxer.addTrack(newFormat);
-                mMuxer.start();
-                mMuxerStarted = true;*/
-
-                trackIndex = encoderCallback.getMuxer().addTrack(newFormat);
-                encoderCallback.getMuxer().start();
+                mMuxer.start();*/
+                mTrackIndex = encoderCallback.addTrack(newFormat);
+                Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
+                encoderCallback.start();
                 mMuxerStarted = true;
             } else if (outputBufferIndex < 0) {
                 Log.w(TAG, "unexpected result from encoder.dequeueOutputBuffer: " +
@@ -283,8 +306,9 @@ public class VideoEncoderFromBuffer {
                     if (!mMuxerStarted) {
 //						throw new RuntimeException("muxer hasn't started");
                         MediaFormat newFormat = mMediaCodec.getOutputFormat();
-                        mTrackIndex = encoderCallback.getMuxer().addTrack(newFormat);
-                        encoderCallback.getMuxer().start();
+                        mTrackIndex = encoderCallback.addTrack(newFormat);
+                        Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
+                        encoderCallback.start();
                         mMuxerStarted = true;
                     }
 
@@ -292,16 +316,11 @@ public class VideoEncoderFromBuffer {
                     outputBuffer.position(mBufferInfo.offset);
                     outputBuffer.limit(mBufferInfo.offset + mBufferInfo.size);
 
-
-                    Log.d(TAG, "====H264 writeSampleData mTrackIndex : " + mTrackIndex + " / es : " + outputBuffer.capacity() + " / " + outputBuffer.limit() + " / " + outputBuffer.position());
-                    Log.d(TAG, "====H264 writeSampleData bufferInfo : " + mBufferInfo.size + " / " + mBufferInfo.offset + " / " + mBufferInfo.presentationTimeUs + " / " + mBufferInfo.flags);
-
                     encoderCallback.writeSampleData(mTrackIndex, outputBuffer, mBufferInfo);
                     if (VERBOSE) {
-                        Log.d(TAG, "sent buffer1 " + mBufferInfo.size + " bytes to muxer");
+                        Log.d(TAG, "sent " + outputBuffer.capacity() + " bytes to muxer");
                     }
                 }
-
                 mMediaCodec.releaseOutputBuffer(outputBufferIndex, false);
             }
             outputBufferIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
@@ -317,33 +336,54 @@ public class VideoEncoderFromBuffer {
         // } catch (Exception e) {
         // System.out.println(e);
         // }
-        Log.i(TAG, "mMediaCodec close()");
+        Log.i(TAG, "close()");
+
+
         try {
             mMediaCodec.stop();
             mMediaCodec.release();
         } catch (Exception e) {
             e.printStackTrace();
         }
-
+        if (encoderCallback != null) {
+            // TODO: stop() throws an exception if you haven't fed it any data.  Keep track
+            //       of frames submitted, and don't call stop() if we haven't written anything.
+            encoderCallback.stop();
+            encoderCallback.release();
+            encoderCallback = null;
+        }
     }
 
-    /**
-     * Returns a color format that is supported by the codec and by this test
-     * code. If no match is found, this throws a test failure -- the set of
-     * formats known to the test should be expanded for new platforms.
-     */
-    private static int selectColorFormat(MediaCodecInfo codecInfo, String mimeType) {
-        MediaCodecInfo.CodecCapabilities capabilities = codecInfo.getCapabilitiesForType(mimeType);
-        for (int i = 0; i < capabilities.colorFormats.length; i++) {
-            int colorFormat = capabilities.colorFormats[i];
-            if (isRecognizedFormat(colorFormat)) {
-                return colorFormat;
-            }
+    private static byte[] YV12toYUV420Planar(byte[] input, byte[] output, int width, int height) {
+        /*
+         * COLOR_FormatYUV420Planar is I420 which is like YV12, but with U and V reversed.
+         * So we just have to reverse U and V.
+         */
+        final int frameSize = width * height;
+        final int qFrameSize = frameSize / 4;
+
+        System.arraycopy(input, 0, output, 0, frameSize); // Y
+        System.arraycopy(input, frameSize, output, frameSize + qFrameSize, qFrameSize); // Cr (V)
+        System.arraycopy(input, frameSize + qFrameSize, output, frameSize, qFrameSize); // Cb (U)
+
+        return output;
+    }
+
+    private static byte[] YV12toYUV420PackedSemiPlanar(byte[] input, byte[] output, int width, int height) {
+        /*
+         * COLOR_TI_FormatYUV420PackedSemiPlanar is NV12
+         * We convert by putting the corresponding U and V bytes together (interleaved).
+         */
+        final int frameSize = width * height;
+        final int qFrameSize = frameSize / 4;
+
+        System.arraycopy(input, 0, output, 0, frameSize); // Y
+
+        for (int i = 0; i < qFrameSize; i++) {
+            output[frameSize + i * 2] = input[frameSize + i + qFrameSize]; // Cb (U)
+            output[frameSize + i * 2 + 1] = input[frameSize + i]; // Cr (V)
         }
-        Log.e(TAG,
-                "couldn't find a good color format for " + codecInfo.getName()
-                        + " / " + mimeType);
-        return 0; // not reached
+        return output;
     }
 
     /**
@@ -385,32 +425,83 @@ public class VideoEncoderFromBuffer {
         return null;
     }
 
-    /**
-     * Generates the presentation time for frame N, in microseconds.
-     */
-    private static long computePresentationTime(int frameIndex) {
-        return 132 + frameIndex * 1000000 / FRAME_RATE;
+    public void setMuxerCallback(EncoderCallback encoderCallback) {
+        this.encoderCallback = encoderCallback;
     }
 
-    /**
-     * Returns true if the specified color format is semi-planar YUV. Throws an
-     * exception if the color format is not recognized (e.g. not YUV).
-     */
-    private static boolean isSemiPlanarYUV(int colorFormat) {
-        switch (colorFormat) {
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar:
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedPlanar:
-                return false;
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar:
-            case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedSemiPlanar:
-            case MediaCodecInfo.CodecCapabilities.COLOR_TI_FormatYUV420PackedSemiPlanar:
-                return true;
-            default:
-                throw new RuntimeException("unknown format " + colorFormat);
-        }
-    }
+    private void handleEndOfStream() {
+        int inputBufferIndex = mMediaCodec.dequeueInputBuffer(TIMEOUT_USEC);
+        mMediaCodec.queueInputBuffer(inputBufferIndex, 0, 0, System.nanoTime() / 1000, MediaCodec.BUFFER_FLAG_PARTIAL_FRAME);
 
-    public void setTrackIndex(int trackIndex) {
-        this.trackIndex = trackIndex;
+        ByteBuffer[] outputBuffers = mMediaCodec.getOutputBuffers();
+
+        int outputBufferIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+        Log.i(TAG, "outputBufferIndex-->" + outputBufferIndex);
+        do {
+            if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                // no output available yet
+                if (VERBOSE)
+                    Log.d(TAG, "no output from encoder available");
+            } else if (outputBufferIndex == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                // not expected for an encoder
+                outputBuffers = mMediaCodec.getOutputBuffers();
+                if (VERBOSE)
+                    Log.d(TAG, "encoder output buffers changed");
+            } else if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                // not expected for an encoder
+
+                MediaFormat newFormat = mMediaCodec.getOutputFormat();
+                Log.d(TAG, "encoder output format changed: " + newFormat);
+
+                // now that we have the Magic Goodies, start the muxer
+                /*mTrackIndex = mMuxer.addTrack(newFormat);
+                mMuxer.start();*/
+                mTrackIndex = encoderCallback.addTrack(newFormat);
+                Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
+                encoderCallback.start();
+                mMuxerStarted = true;
+            } else if (outputBufferIndex < 0) {
+                Log.w(TAG, "unexpected result from encoder.dequeueOutputBuffer: " +
+                        outputBufferIndex);
+                // let's ignore it
+            } else {
+                if (VERBOSE)
+                    Log.d(TAG, "perform encoding");
+                ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
+                if (outputBuffer == null) {
+                    throw new RuntimeException("encoderOutputBuffer " + outputBufferIndex +
+                            " was null");
+                }
+
+                if ((mBufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                    // The codec config data was pulled out and fed to the muxer when we got
+                    // the INFO_OUTPUT_FORMAT_CHANGED status.  Ignore it.
+                    if (VERBOSE) Log.d(TAG, "ignoring BUFFER_FLAG_CODEC_CONFIG");
+                    mBufferInfo.size = 0;
+                }
+
+                if (mBufferInfo.size != 0) {
+                    if (!mMuxerStarted) {
+//						throw new RuntimeException("muxer hasn't started");
+                        MediaFormat newFormat = mMediaCodec.getOutputFormat();
+                        mTrackIndex = encoderCallback.addTrack(newFormat);
+                        Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
+                        encoderCallback.start();
+                        mMuxerStarted = true;
+                    }
+
+                    // adjust the ByteBuffer values to match BufferInfo (not needed?)
+                    outputBuffer.position(mBufferInfo.offset);
+                    outputBuffer.limit(mBufferInfo.offset + mBufferInfo.size);
+
+                    encoderCallback.writeSampleData(mTrackIndex, outputBuffer, mBufferInfo);
+                    if (VERBOSE) {
+                        Log.d(TAG, "sent " + mBufferInfo.size + " bytes to muxer");
+                    }
+                }
+                mMediaCodec.releaseOutputBuffer(outputBufferIndex, false);
+            }
+            outputBufferIndex = mMediaCodec.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+        } while (outputBufferIndex >= 0);
     }
 }
