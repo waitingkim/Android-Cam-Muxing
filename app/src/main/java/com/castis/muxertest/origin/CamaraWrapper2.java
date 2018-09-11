@@ -38,7 +38,7 @@ public class CamaraWrapper2 {
     public final static int VWIDTH = 640;
     public final static int VHEIGHT = 480;
 
-    public int frameCnt = 0;
+    public int frameCnt = 1;
 
     private Context context;
 
@@ -60,6 +60,8 @@ public class CamaraWrapper2 {
 
     int audioTrackId = -1;
     int videoTrackId = -1;
+
+    boolean isHttpStart = false;
 
     public CamaraWrapper2() {
     }
@@ -117,12 +119,9 @@ public class CamaraWrapper2 {
             @Override
             public void start() {
                 cnt++;
-                Log.d(TAG, "encoderCallback cnt : " + cnt);
+                Logger.d(TAG, "encoderCallback cnt : " + cnt);
                 if (cnt > 1) {
                     muxer.start();
-
-                    BufferToHttp bufferToHttp = new BufferToHttp();
-                    bufferToHttp.run();
                 }
             }
 
@@ -159,6 +158,11 @@ public class CamaraWrapper2 {
 
             @Override
             public synchronized void writeSampleData(String type, int trackIndex, ByteBuffer writeByteBuffer, MediaCodec.BufferInfo bufferInfo) {
+                if (type.equalsIgnoreCase("AUDIO"))
+                    audioTrackId = trackIndex;
+                else if (type.equalsIgnoreCase("VIDEO"))
+                    videoTrackId = trackIndex;
+
                 if (trackIndex == 0)
                     Logger.w(CamaraWrapper2.class, "count : " + cnt + " / writeSampleData track : " + trackIndex +
                             " / Buffer[ pos=" + writeByteBuffer.position() + " lim=" + writeByteBuffer.limit() + " cap=" + writeByteBuffer.capacity() + " ]" +
@@ -192,11 +196,23 @@ public class CamaraWrapper2 {
                 bytes.add(3, Util.framePacketizing(bufferInfo.size, 4));
                 bytes.add(4, data);
 
-                System.arraycopy(bytes.get(0), 0, frame, 0, bytes.get(0).length);
-                System.arraycopy(bytes.get(1), 0, frame, bytes.get(0).length, bytes.get(1).length);
-                System.arraycopy(bytes.get(2), 0, frame, (bytes.get(0).length + bytes.get(1).length), bytes.get(2).length);
-                System.arraycopy(bytes.get(3), 0, frame, (bytes.get(0).length + bytes.get(1).length + bytes.get(2).length), bytes.get(3).length);
-                System.arraycopy(bytes.get(4), 0, frame, (bytes.get(0).length + bytes.get(1).length + bytes.get(2).length + bytes.get(3).length), bytes.get(4).length);
+                int writeIndex = 0;
+
+                // 첫 줄부터 쓰기
+                System.arraycopy(bytes.get(0), 0, frame, writeIndex, bytes.get(0).length);
+
+                writeIndex = bytes.get(0).length;
+                System.arraycopy(bytes.get(1), 0, frame, writeIndex, bytes.get(1).length);
+
+                writeIndex = writeIndex + bytes.get(1).length;
+                System.arraycopy(bytes.get(2), 0, frame, writeIndex, bytes.get(2).length);
+
+                writeIndex = writeIndex + bytes.get(2).length;
+                System.arraycopy(bytes.get(3), 0, frame, writeIndex, bytes.get(3).length);
+
+                writeIndex = writeIndex + bytes.get(3).length;
+                System.arraycopy(bytes.get(4), 0, frame, writeIndex, bytes.get(4).length);
+
 
                 addFrame(frame);
 
@@ -255,27 +271,11 @@ public class CamaraWrapper2 {
         afromBuffer2 = new AudioEncoderFromBuffer2(mStartTime);
         afromBuffer2.setMuxerCallback(encoderCallback);
 
-//        SendFrames sendFrames = new SendFrames();
-//        sendFrames.run();
+        MyAsyncTaskInit myAsyncTaskInit = new MyAsyncTaskInit();
+        myAsyncTaskInit.execute();
 
         MyAsyncTask myAsyncTask = new MyAsyncTask();
         myAsyncTask.execute();
-
-
-//        Runnable runnable = new Runnable() {
-//            @Override
-//            public void run() {
-//                while (!isStop) {
-//                    try {
-//                        Thread.sleep(500);
-//                        Logger.i("runnable", "run");
-//                    } catch (Exception e) {
-//                        e.printStackTrace();
-//                    }
-//                }
-//            }
-//        };
-//        runnable.run();
 
         Log.i(TAG, "oenEnd");
         return camera;
@@ -284,6 +284,7 @@ public class CamaraWrapper2 {
     ArrayList<byte[]> frameBytes = new ArrayList<>();
 
     private void addFrame(byte[] frame) {
+        Logger.i("============index : " + frameBytes.size(), Arrays.toString(frame));
         frameBytes.add(frameBytes.size(), frame);
         Logger.i("CamaraWarapper", "frameBytes current total size : " + frameBytes.size());
     }
@@ -301,31 +302,38 @@ public class CamaraWrapper2 {
 
         @Override
         protected Integer doInBackground(Void... voids) {
-            Logger.i("CamaraWrapper2.class", "doInBackground");
+            Logger.i("MyAsyncTask.class", "doInBackground");
             while (true) {
                 try {
-                    Thread.sleep(10);
+                    if (isHttpStart &&frameBytes.size() > 0) {
+//                        URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/" + frameCnt);
+                        URL url = new URL("http://172.16.45.13:8181/publish/es/test/" + frameCnt);
+                        //http://172.16.45.13:8181/publish/es/test/init
 
-                    if (frameBytes.size() > 0) {
-                        URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/" + frameCnt);
+//                        Logger.i("============", "be : " + frameBytes.size());
+                        byte[] out = frameBytes.get(0);
+
                         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                         conn.setConnectTimeout(5 * 1000);
                         conn.addRequestProperty("Connection", "keep-alive");
+                        conn.setRequestProperty("Content-Length", "" + Integer.toString(out.length));
                         conn.setDoOutput(true);
                         conn.setRequestMethod("POST");
                         conn.setUseCaches(false);
 
 //                        conn.connect();
 
-                        Logger.i("============", "be : " + frameBytes.size());
-                        byte[] out = frameBytes.get(0);
+//                        Logger.i("============", Arrays.toString(out));
+
                         frameBytes.remove(0);
-                        Logger.i("============", "fa : " + frameBytes.size());
+//                        Logger.i("============", "fa : " + frameBytes.size());
 
                         OutputStream os = conn.getOutputStream();
                         os.write(out);
                         os.flush();
                         os.close();
+
+                        frameCnt++;
 
 
                         InputStream is = conn.getInputStream();
@@ -347,7 +355,8 @@ public class CamaraWrapper2 {
                         } else {
                         }*/
 
-                        frameCnt++;
+                    } else {
+                        Thread.sleep(10);
                     }
                 } catch (MalformedURLException e) {
                     e.printStackTrace();
@@ -357,6 +366,44 @@ public class CamaraWrapper2 {
                     e.printStackTrace();
                 }
             }
+        }
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+        }
+
+        @Override
+        protected void onPostExecute(Integer integer) {
+            super.onPostExecute(integer);
+        }
+
+    }
+
+    public class MyAsyncTaskInit extends AsyncTask<Void, Integer, Integer> {
+        public MyAsyncTaskInit() {
+        }
+
+        @Override
+        protected Integer doInBackground(Void... voids) {
+            Logger.i("CamaraWrapper2.class", "doInBackground");
+            boolean isRun = true;
+            while (isRun) {
+                try {
+                    Logger.i("MyAsyncTaskInit.class", "fromBuffer2.hasPPSAndSPS() : " + fromBuffer2.hasPPSAndSPS());
+                    if (fromBuffer2.hasPPSAndSPS() && audioTrackId > -1 && videoTrackId > -1) {
+                        BufferToHttp bufferToHttp = new BufferToHttp();
+                        bufferToHttp.run();
+                        isRun = false;
+                    } else {
+                        fromBuffer2.searchSPSandPPS();
+                        Thread.sleep(100);
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            return null;
         }
 
         @Override
@@ -386,33 +433,36 @@ public class CamaraWrapper2 {
         @Override
         public void run() {
             try {
-                URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/init");
+
+                Logger.i("BufferToHttp.class", "RUN");
+
+                //URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/init");
+                URL url = new URL("http://172.16.45.13:8181/publish/es/test/init");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(5 * 1000);
                 conn.addRequestProperty("Connection", "keep-alive");
-                conn.setRequestProperty( "Content-Type", "application/json" );
+                conn.setRequestProperty("Content-Type", "application/json");
                 conn.setRequestProperty("Accept", "application/json");
                 conn.setDoOutput(true);
                 conn.setRequestMethod("POST");
                 conn.setUseCaches(false);
 //                        conn.connect();
-
                 OutputStream os = conn.getOutputStream();
 
                 JSONObject jsonObject = new JSONObject();
                 JSONObject audio = new JSONObject();
                 audio.put("trackId", audioTrackId);
                 audio.put("trackType", "audio");
-                audio.put("timescale", 1000000000);
+                audio.put("timescale", 1000000);
                 audio.put("codec", "AAC");
-                audio.put("codecInfo", "YXNkZnNhZmZkc2FmZA");
+                audio.put("codecInfo", afromBuffer2.getCodecInfo());
 
                 JSONObject video = new JSONObject();
                 video.put("trackId", videoTrackId);
                 video.put("trackType", "video");
-                video.put("timescale", 1000000000);
+                video.put("timescale", 1000000);
                 video.put("codec", "h264");
-                video.put("codecInfo", "YXNkZnNhZmZkc2FmZA");
+                video.put("codecInfo", fromBuffer2.getB64PPSAndSPS());
 
                 JSONArray jsonArray = new JSONArray();
                 jsonArray.put(audio);
@@ -446,6 +496,7 @@ public class CamaraWrapper2 {
 
                         }
 */
+                        isHttpStart = true;
             } catch (MalformedURLException e) {
                 e.printStackTrace();
             } catch (IOException e) {
