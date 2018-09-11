@@ -8,7 +8,7 @@ import java.nio.ByteBuffer;
 
 public interface EncoderCallback {
 
-    public void writeSampleData(int trackIndex, ByteBuffer writeByteBuffer, MediaCodec.BufferInfo bufferInfo);
+    public void writeSampleData(String type, int trackIndex, ByteBuffer writeByteBuffer, MediaCodec.BufferInfo bufferInfo);
 
     public int addTrack(MediaFormat format);
 

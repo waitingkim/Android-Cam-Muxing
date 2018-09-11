@@ -111,7 +111,7 @@ public class CamaraWrapper implements SurfaceHolder.Callback {
 //        audioEncoderFromBuffer = new AudioEncoderFromBuffer(mStartTime);
         videoEncoderFromBuffer = new VideoEncoderFromBuffer(mStartTime, encoder, vSize);
 
-        File file = Util.getOutputMediaFile("h264", "mp4");
+        File file = Util.getOutputMediaFile("mp4", 0,"mp4");
         Log.i(TAG, "Output FileName : " + file.getName());
 
         try {

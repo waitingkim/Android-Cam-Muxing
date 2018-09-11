@@ -6,20 +6,18 @@ import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaFormat;
-import android.media.MediaMuxer;
 import android.os.Environment;
 import android.util.Log;
 
+import com.castis.muxertest.Logger;
 import com.castis.muxertest.MainActivity;
 import com.castis.muxertest.NV21Convertor;
 import com.castis.muxertest.Util;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.Locale;
 
@@ -34,7 +32,7 @@ public class VideoEncoderFromBuffer2 {
     private static final int IFRAME_INTERVAL = FRAME_RATE; // 10 between
 
     // I-frames
-    private static final int TIMEOUT_USEC = 10000;
+    private int TIMEOUT_USEC = 10000;
     private static final int COMPRESS_RATIO = 256;
     private static final int BIT_RATE = MainActivity.VHEIGHT * MainActivity.VWIDTH * 3 * 8 * FRAME_RATE / COMPRESS_RATIO; // bit rate CameraWrapper.
     private MediaCodec mMediaCodec;
@@ -155,7 +153,7 @@ public class VideoEncoderFromBuffer2 {
 
     @SuppressLint("NewApi")
     public VideoEncoderFromBuffer2(android.hardware.Camera.Size size, long mStartTime) {
-        Log.i(TAG, "VideoEncoder()");
+        Logger.d(this, "VideoEncoder startTime : " + mStartTime);
         this.vsize = size;
 
         mFrameData = new byte[this.vsize.width * this.vsize.height * 3 / 2];
@@ -187,6 +185,8 @@ public class VideoEncoderFromBuffer2 {
 
         try {
             mMediaCodec = MediaCodec.createByCodecName(codecInfo.getName());
+
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -230,15 +230,12 @@ public class VideoEncoderFromBuffer2 {
         }
 
         Bitmap bm = Util.decodeNV21(input, parameters);
-        File file = Util.getOutputMediaFile("bitmpa", "bitmap2.jpg");
+        File file = Util.getOutputMediaFile("bitmpa", 0, "bitmap2.jpg");
         Util.SaveBitmapToFileCache(bm, file.getAbsolutePath());
     }
 
-    public void encodeFrame(byte[] input/* , byte[] output */) {
-        Log.i(TAG, "encodeFrame()");
-        long encodedSize = 0;
-
-        Log.i(TAG, "encodeFrame() " + mFrameData.toString() + " / " + mFrameData.length);
+    public synchronized void encodeFrame(byte[] input/* , byte[] output */) {
+//        Log.i(TAG, "encodeFrame() " + mFrameData.toString() + " / " + mFrameData.length);
         ByteBuffer[] inputBuffers = mMediaCodec.getInputBuffers();
         ByteBuffer[] outputBuffers = mMediaCodec.getOutputBuffers();
         int inputBufferIndex = mMediaCodec.dequeueInputBuffer(TIMEOUT_USEC);
@@ -247,10 +244,10 @@ public class VideoEncoderFromBuffer2 {
         if (inputBufferIndex >= 0) {
             long endTime = System.nanoTime();
             long ptsUsec = (endTime - mStartTime) / 1000;
-            Log.i(TAG, "resentationTime: " + ptsUsec);
+//            Logger.i("VideoEncoder", "presentationTime: " + ptsUsec);
             mNV21.convert(input, inputBuffers[inputBufferIndex]);
             ByteBuffer inputBuffer = inputBuffers[inputBufferIndex];
-            mMediaCodec.queueInputBuffer(inputBufferIndex, 0, inputBuffer.capacity(), System.nanoTime() / 1000, 0);
+            mMediaCodec.queueInputBuffer(inputBufferIndex, 0, inputBuffer.capacity(), ptsUsec, 0);
         } else {
             // either all in use, or we timed out during initial setup
             if (VERBOSE)
@@ -316,9 +313,9 @@ public class VideoEncoderFromBuffer2 {
                     outputBuffer.position(mBufferInfo.offset);
                     outputBuffer.limit(mBufferInfo.offset + mBufferInfo.size);
 
-                    encoderCallback.writeSampleData(mTrackIndex, outputBuffer, mBufferInfo);
+                    encoderCallback.writeSampleData("V", mTrackIndex, outputBuffer, mBufferInfo);
                     if (VERBOSE) {
-                        Log.d(TAG, "sent " + outputBuffer.capacity() + " bytes to muxer");
+//                        Log.d(TAG, "sent " + outputBuffer.capacity() + " bytes to muxer");
                     }
                 }
                 mMediaCodec.releaseOutputBuffer(outputBufferIndex, false);
@@ -338,7 +335,6 @@ public class VideoEncoderFromBuffer2 {
         // }
         Log.i(TAG, "close()");
 
-
         try {
             mMediaCodec.stop();
             mMediaCodec.release();
@@ -347,7 +343,7 @@ public class VideoEncoderFromBuffer2 {
         }
         if (encoderCallback != null) {
             // TODO: stop() throws an exception if you haven't fed it any data.  Keep track
-            //       of frames submitted, and don't call stop() if we haven't written anything.
+            // of frames submitted, and don't call stop() if we haven't written anything.
             encoderCallback.stop();
             encoderCallback.release();
             encoderCallback = null;
@@ -494,7 +490,7 @@ public class VideoEncoderFromBuffer2 {
                     outputBuffer.position(mBufferInfo.offset);
                     outputBuffer.limit(mBufferInfo.offset + mBufferInfo.size);
 
-                    encoderCallback.writeSampleData(mTrackIndex, outputBuffer, mBufferInfo);
+                    encoderCallback.writeSampleData("V", mTrackIndex, outputBuffer, mBufferInfo);
                     if (VERBOSE) {
                         Log.d(TAG, "sent " + mBufferInfo.size + " bytes to muxer");
                     }

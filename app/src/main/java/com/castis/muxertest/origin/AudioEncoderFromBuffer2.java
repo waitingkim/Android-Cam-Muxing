@@ -9,6 +9,8 @@ import android.media.MediaMuxer;
 import android.media.MediaRecorder;
 import android.util.Log;
 
+import com.castis.muxertest.Logger;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
@@ -44,7 +46,7 @@ public class AudioEncoderFromBuffer2 {
     private boolean isClose = false;
 
     public AudioEncoderFromBuffer2(long mStartTime) {
-
+        Logger.d(this, "AudioEncoder startTime : " + mStartTime);
         this.mStartTime = mStartTime;
         // open mic, to find the work one.
         if ((mic = chooseAudioDevice()) == null) {
@@ -78,6 +80,8 @@ public class AudioEncoderFromBuffer2 {
         aformat.setInteger("max-bitrate", 24000);
         aformat.setInteger(MediaFormat.KEY_CHANNEL_COUNT, 2);
         aformat.setInteger(MediaFormat.KEY_BIT_RATE, 24000);
+
+
 
         Log.i(TAG, "start aac aencoder");
 
@@ -162,8 +166,11 @@ public class AudioEncoderFromBuffer2 {
 
     private void handleEndOfStream() {
         Log.d(TAG, "Audio handleEndOfStream");
-        int inputBufferIndex = aencoder.dequeueInputBuffer(TIMEOUT_USEC);
-        aencoder.queueInputBuffer(inputBufferIndex, 0, 0, System.nanoTime() / 1000, MediaCodec.BUFFER_FLAG_PARTIAL_FRAME);
+        int inputBufferIndex = aencoder.dequeueInputBuffer(-1);
+        long endTime = System.nanoTime();
+        long ptsUsec = (endTime - mStartTime) / 1000;
+        Log.i(TAG, "resentationTime: " + ptsUsec);
+        aencoder.queueInputBuffer(inputBufferIndex, 0, 0, ptsUsec, MediaCodec.BUFFER_FLAG_PARTIAL_FRAME);
 
         ByteBuffer[] outputBuffers = aencoder.getOutputBuffers();
         int outputBufferIndex = aencoder.dequeueOutputBuffer(bufferInfo, 0);
@@ -184,7 +191,7 @@ public class AudioEncoderFromBuffer2 {
                 ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
 
                 onEncodedAacFrame(outputBuffer, bufferInfo);
-                Log.e(TAG, outputBuffer.capacity() + " bytes written");
+//                Log.e(TAG, outputBuffer.capacity() + " bytes written");
 
                 aencoder.releaseOutputBuffer(outputBufferIndex, false);
 
@@ -250,12 +257,15 @@ public class AudioEncoderFromBuffer2 {
                 if (len == AudioRecord.ERROR_INVALID_OPERATION || len == AudioRecord.ERROR_BAD_VALUE) {
                     Log.d(TAG, "Audio len " + "AudioRecord.ERROR_INVALID_OPERATION ");
                 } else {
-                    aencoder.queueInputBuffer(inputBufferIndex, 0, len, System.nanoTime() / 1000, 0);
+                    long endTime = System.nanoTime();
+                    long ptsUsec = (endTime - mStartTime) / 1000;
+//                    Logger.i("AudioEncoder", "presentationTime: " + ptsUsec);
+                    aencoder.queueInputBuffer(inputBufferIndex, 0, len, ptsUsec, 0);
                 }
             }
 
             int outputBufferIndex = aencoder.dequeueOutputBuffer(bufferInfo, 0);
-            Log.i(TAG, "============= Audio outputBufferIndex-->" + outputBufferIndex);
+//            Log.i(TAG, "============= Audio outputBufferIndex-->" + outputBufferIndex);
 
             do {
                 if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
@@ -273,15 +283,15 @@ public class AudioEncoderFromBuffer2 {
                     encoderCallback.start();
                 } else {
                     ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
-
+//                    Logger.i("####", "bufferInfo.presentationTimeUs : " + bufferInfo.presentationTimeUs);
                     onEncodedAacFrame(outputBuffer, bufferInfo);
-                    Log.e(TAG, outputBuffer.capacity() + " bytes written");
+//                    Log.e(TAG, outputBuffer.capacity() + " bytes written");
 
                     aencoder.releaseOutputBuffer(outputBufferIndex, false);
 
-                    outputBufferIndex = aencoder.dequeueOutputBuffer(bufferInfo, 10000);
-                    Log.i(TAG, "Audio =============While outputBufferIndex-->" + outputBufferIndex);
-                    Log.e("AudioEncoder", outputBuffer.capacity() + " bytes written");
+                    outputBufferIndex = aencoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
+//                    Log.i(TAG, "Audio =============While outputBufferIndex-->" + outputBufferIndex);
+//                    Log.e("AudioEncoder", outputBuffer.capacity() + " bytes written");
 
                     /*int outBitsSize = bufferInfo.size;
                     int outPacketSize = outBitsSize + 7;    // 7 is ADTS size
@@ -371,9 +381,9 @@ public class AudioEncoderFromBuffer2 {
             es.position(bi.offset);
             es.limit(bi.offset + bi.size);
 
-            encoderCallback.writeSampleData(atrack, es, bi);
+            encoderCallback.writeSampleData("A", atrack, es, bi);
         } catch (Exception e) {
-            Log.e(TAG, "muxer write audio sample failed.");
+            Logger.e(this, "muxer write audio sample failed.");
             e.printStackTrace();
         }
     }
