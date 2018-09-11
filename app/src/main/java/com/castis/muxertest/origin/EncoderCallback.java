@@ -10,7 +10,7 @@ public interface EncoderCallback {
 
     public void writeSampleData(String type, int trackIndex, ByteBuffer writeByteBuffer, MediaCodec.BufferInfo bufferInfo);
 
-    public int addTrack(MediaFormat format);
+    public int addTrack(String type, MediaFormat format);
 
     public void start();
 

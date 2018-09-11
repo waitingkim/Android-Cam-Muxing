@@ -12,6 +12,10 @@ import android.view.SurfaceHolder;
 import com.castis.muxertest.Logger;
 import com.castis.muxertest.Util;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -53,6 +57,9 @@ public class CamaraWrapper2 {
     VideoEncoderFromBuffer2 fromBuffer2;
 
     AudioEncoderFromBuffer2 afromBuffer2;
+
+    int audioTrackId = -1;
+    int videoTrackId = -1;
 
     public CamaraWrapper2() {
     }
@@ -102,15 +109,10 @@ public class CamaraWrapper2 {
         } catch (IOException ioe) {
             throw new RuntimeException("MediaMuxer creation failed", ioe);
         }
-
+        ArrayList<byte[]> frameBytes = new ArrayList<>();
         cameraPreviewCallback = new CameraPreviewCallback();
         encoderCallback = new EncoderCallback() {
             int cnt = 0, stopCnt = 0, release = 0;
-            int frameMaxCnt = 60;
-            byte[] fileFrame = new byte[0];
-            ArrayList<byte[]> frameBytes = new ArrayList<>();
-            String[] fileInfos = null;
-
 
             @Override
             public void start() {
@@ -118,6 +120,9 @@ public class CamaraWrapper2 {
                 Log.d(TAG, "encoderCallback cnt : " + cnt);
                 if (cnt > 1) {
                     muxer.start();
+
+                    BufferToHttp bufferToHttp = new BufferToHttp();
+                    bufferToHttp.run();
                 }
             }
 
@@ -141,10 +146,15 @@ public class CamaraWrapper2 {
             }
 
             @Override
-            public int addTrack(MediaFormat format) {
+            public int addTrack(String type, MediaFormat format) {
+                int index = -1;
                 if (muxer != null)
-                    return muxer.addTrack(format);
-                return -1;
+                    index = muxer.addTrack(format);
+                if (type.equalsIgnoreCase("AUDIO"))
+                    audioTrackId = index;
+                else if (type.equalsIgnoreCase("VIDEO"))
+                    videoTrackId = index;
+                return index;
             }
 
             @Override
@@ -165,7 +175,7 @@ public class CamaraWrapper2 {
 
 
                 int size = 1 + 8 + 8 + 4 + writeByteBuffer.limit();
-                Logger.w(CamaraWrapper2.class, "size : " + size);
+//                Logger.w(CamaraWrapper2.class, "size : " + size);
 
                 byte[] frame = new byte[size];
                 byte[] data = new byte[writeByteBuffer.limit()];
@@ -188,54 +198,52 @@ public class CamaraWrapper2 {
                 System.arraycopy(bytes.get(3), 0, frame, (bytes.get(0).length + bytes.get(1).length + bytes.get(2).length), bytes.get(3).length);
                 System.arraycopy(bytes.get(4), 0, frame, (bytes.get(0).length + bytes.get(1).length + bytes.get(2).length + bytes.get(3).length), bytes.get(4).length);
 
+                addFrame(frame);
 
+//                if (fileInfos == null)
+//                    fileInfos = new String[]{type, String.valueOf(trackIndex), String.valueOf(bufferInfo.presentationTimeUs)};
 
-                frameBytes.add(frame);
-
-                if (fileInfos == null)
-                    fileInfos = new String[]{type, String.valueOf(trackIndex), String.valueOf(bufferInfo.presentationTimeUs)};
-
-                if (frameCnt > frameMaxCnt) {
-                    String[] fileInfo = fileInfos;
-                    Logger.e("###", Arrays.toString(fileInfo));
-                    File file = Util.getOutputMediaFile("h264", Long.parseLong(fileInfo[2]), "_" + fileInfo[0] + "_" + fileInfo[1] + ".h264");
-//                    try {
-
-                    // frameBytes 바이트배열로 묶는 처리 후 파일로 생성
-                    int totalSize = 0;
-                    for (int i = 0; i < frameBytes.size(); i++) {
-                        totalSize = totalSize + frameBytes.get(i).length;
-//                                Logger.d("##########", "frameBytes.size() : " + frameBytes.size() + " / totalsize : " + totalSize);
-                    }
-                    byte[] aaa = new byte[totalSize];
-
-                    int destPos = 0;
-                    for (int i = 0; i < frameBytes.size(); i++) {
-//                                Logger.d("##########", "destPos : " + destPos);
-                        System.arraycopy(frameBytes.get(i), 0, aaa, destPos, frameBytes.get(i).length);
-                        destPos = destPos + frameBytes.get(i).length;
-                    }
+//                if (frameCnt > frameMaxCnt) {
+//                    String[] fileInfo = fileInfos;
+//                    Logger.e("###", Arrays.toString(fileInfo));
+//                    File file = Util.getOutputMediaFile("h264", Long.parseLong(fileInfo[2]), "_" + fileInfo[0] + "_" + fileInfo[1] + ".h264");
+////                    try {
+//
+//                    // frameBytes 바이트배열로 묶는 처리 후 파일로 생성
+//                    int totalSize = 0;
+//                    for (int i = 0; i < frameBytes.size(); i++) {
+//                        totalSize = totalSize + frameBytes.get(i).length;
+////                                Logger.d("##########", "frameBytes.size() : " + frameBytes.size() + " / totalsize : " + totalSize);
+//                    }
+//                    byte[] aaa = new byte[totalSize];
+//
+//                    int destPos = 0;
+//                    for (int i = 0; i < frameBytes.size(); i++) {
+////                                Logger.d("##########", "destPos : " + destPos);
+//                        System.arraycopy(frameBytes.get(i), 0, aaa, destPos, frameBytes.get(i).length);
+//                        destPos = destPos + frameBytes.get(i).length;
+//                    }
 
 //                        FileOutputStream stream = new FileOutputStream(file.getAbsoluteFile());
 //                        stream.write(aaa);
 //                        stream.close();
 
-                    MyAsyncTask myAsyncTask = new MyAsyncTask();
-                    myAsyncTask.setFrame(frame);
+//                    MyAsyncTask myAsyncTask = new MyAsyncTask();
+//                    myAsyncTask.setFrame(frame);
 //                    Integer integer = Integer.valueOf(frameCnt);
 //                myAsyncTask.onPostExecute(integer);
-                    myAsyncTask.execute();
+//                    myAsyncTask.execute();
 
-                    frameBytes.clear();
-                    ptsList.clear();
-                    fileInfos = null;
+//                    frameBytes.clear();
+//                    ptsList.clear();
+//                    fileInfos = null;
 //                    } catch (IOException e) {
 //                        e.printStackTrace();
 //                    }
-                    frameCnt = 0;
-                } else {
-                    frameCnt++;
-                }
+//                    frameCnt = 0;
+//                } else {
+//                    frameCnt++;
+//                }
 
 
             }
@@ -247,8 +255,37 @@ public class CamaraWrapper2 {
         afromBuffer2 = new AudioEncoderFromBuffer2(mStartTime);
         afromBuffer2.setMuxerCallback(encoderCallback);
 
+//        SendFrames sendFrames = new SendFrames();
+//        sendFrames.run();
+
+        MyAsyncTask myAsyncTask = new MyAsyncTask();
+        myAsyncTask.execute();
+
+
+//        Runnable runnable = new Runnable() {
+//            @Override
+//            public void run() {
+//                while (!isStop) {
+//                    try {
+//                        Thread.sleep(500);
+//                        Logger.i("runnable", "run");
+//                    } catch (Exception e) {
+//                        e.printStackTrace();
+//                    }
+//                }
+//            }
+//        };
+//        runnable.run();
+
         Log.i(TAG, "oenEnd");
         return camera;
+    }
+
+    ArrayList<byte[]> frameBytes = new ArrayList<>();
+
+    private void addFrame(byte[] frame) {
+        frameBytes.add(frameBytes.size(), frame);
+        Logger.i("CamaraWarapper", "frameBytes current total size : " + frameBytes.size());
     }
 
 
@@ -265,50 +302,61 @@ public class CamaraWrapper2 {
         @Override
         protected Integer doInBackground(Void... voids) {
             Logger.i("CamaraWrapper2.class", "doInBackground");
-            try {
-                URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/" + frameCnt);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(5 * 1000);
-                conn.addRequestProperty("Connection", "keep-alive");
-                conn.setDoOutput(true);
-                conn.setRequestMethod("POST");
-                conn.setUseCaches(false);
+            while (true) {
+                try {
+                    Thread.sleep(10);
+
+                    if (frameBytes.size() > 0) {
+                        URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/" + frameCnt);
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(5 * 1000);
+                        conn.addRequestProperty("Connection", "keep-alive");
+                        conn.setDoOutput(true);
+                        conn.setRequestMethod("POST");
+                        conn.setUseCaches(false);
+
 //                        conn.connect();
 
-                OutputStream os = conn.getOutputStream();
-                os.write(frame);
-                os.flush();
-                os.close();
+                        Logger.i("============", "be : " + frameBytes.size());
+                        byte[] out = frameBytes.get(0);
+                        frameBytes.remove(0);
+                        Logger.i("============", "fa : " + frameBytes.size());
 
-                InputStream is = conn.getInputStream();
-                BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"));
-                String line = null;
-                while ((line = br.readLine()) != null) {
-                    System.out.println("line:" + line);
-                }
+                        OutputStream os = conn.getOutputStream();
+                        os.write(out);
+                        os.flush();
+                        os.close();
 
-                int responseCode = conn.getResponseCode();
-                //System.out.println("responseCode : " + responseCode);
-                Logger.i("CamaraWrapper2.class", "responseCode : " + responseCode);
+
+                        InputStream is = conn.getInputStream();
+                        BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"));
+                        String line = null;
+                        while ((line = br.readLine()) != null) {
+                            System.out.println("line:" + line);
+                        }
+
+                        int responseCode = conn.getResponseCode();
+                        //System.out.println("responseCode : " + responseCode);
+                        Logger.i("CamaraWrapper2.class", "responseCode : " + responseCode);
 //                        conn.disconnect();
 
                         /*OutputStreamWriter writer = new OutputStreamWriter(conn.getOutputStream());
                         writer.write("{msg:success}");
                         writer.close();
                         if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-
                         } else {
+                        }*/
 
-                        }
-
-*/
-            } catch (MalformedURLException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
+                        frameCnt++;
+                    }
+                } catch (MalformedURLException e) {
+                    e.printStackTrace();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
-            frameCnt++;
-            return null;
         }
 
         @Override
@@ -319,7 +367,6 @@ public class CamaraWrapper2 {
         @Override
         protected void onPostExecute(Integer integer) {
             super.onPostExecute(integer);
-            Logger.i("CamaraWrapper2.class", "onPostExecute integer : " + integer.intValue());
         }
 
     }
@@ -333,20 +380,48 @@ public class CamaraWrapper2 {
             this.frame = frame;
         }
 
+        public BufferToHttp() {
+        }
+
         @Override
         public void run() {
             try {
-                URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/1");
+                URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/init");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(5 * 1000);
                 conn.addRequestProperty("Connection", "keep-alive");
+                conn.setRequestProperty( "Content-Type", "application/json" );
+                conn.setRequestProperty("Accept", "application/json");
                 conn.setDoOutput(true);
                 conn.setRequestMethod("POST");
                 conn.setUseCaches(false);
 //                        conn.connect();
 
                 OutputStream os = conn.getOutputStream();
-                os.write(frame);
+
+                JSONObject jsonObject = new JSONObject();
+                JSONObject audio = new JSONObject();
+                audio.put("trackId", audioTrackId);
+                audio.put("trackType", "audio");
+                audio.put("timescale", 1000000000);
+                audio.put("codec", "AAC");
+                audio.put("codecInfo", "YXNkZnNhZmZkc2FmZA");
+
+                JSONObject video = new JSONObject();
+                video.put("trackId", videoTrackId);
+                video.put("trackType", "video");
+                video.put("timescale", 1000000000);
+                video.put("codec", "h264");
+                video.put("codecInfo", "YXNkZnNhZmZkc2FmZA");
+
+                JSONArray jsonArray = new JSONArray();
+                jsonArray.put(audio);
+                jsonArray.put(video);
+
+                jsonObject.put("tracks", jsonArray);
+
+
+                os.write(jsonObject.toString().getBytes());
                 os.flush();
                 os.close();
 
@@ -375,12 +450,16 @@ public class CamaraWrapper2 {
                 e.printStackTrace();
             } catch (IOException e) {
                 e.printStackTrace();
+            } catch (JSONException e) {
+                e.printStackTrace();
             }
         }
     }
 
+    public boolean isStop = false;
+
     class CameraPreviewCallback implements Camera.PreviewCallback {
-        public boolean isStop = false;
+
 
         public CameraPreviewCallback() {
 
@@ -414,40 +493,43 @@ public class CamaraWrapper2 {
 
     public class SendFrames extends Thread {
 
-        public SendFrames() {
+        int index = 0;
 
+        public SendFrames() {
         }
 
         public void run() {
-            while (true) {
+            while (!isStop) {
                 try {
-                    Thread.sleep(100);
-                    Logger.i("CamaraWrapper2.class", "doInBackground");
+                    Thread.sleep(500);
+                    Logger.i("SendFrames", "run");
 
-                    URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/" + frameCnt);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(5 * 1000);
-                    conn.addRequestProperty("Connection", "keep-alive");
-                    conn.setDoOutput(true);
-                    conn.setRequestMethod("POST");
-                    conn.setUseCaches(false);
+                    if (frameBytes.size() > 0) {
+                        byte[] bytes = frameBytes.get(0);
+                        URL url = new URL("http://192.168.11.8:3001/ktBrokering/version/" + frameCnt);
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(5 * 1000);
+                        conn.addRequestProperty("Connection", "keep-alive");
+                        conn.setDoOutput(true);
+                        conn.setRequestMethod("POST");
+                        conn.setUseCaches(false);
 
-                    OutputStream os = conn.getOutputStream();
-                    os.write( null );
-                    os.flush();
-                    os.close();
+                        OutputStream os = conn.getOutputStream();
+                        os.write(bytes);
+                        os.flush();
+                        os.close();
 
-                    InputStream is = conn.getInputStream();
-                    BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"));
-                    String line = null;
-                    while ((line = br.readLine()) != null) {
-                        System.out.println("line:" + line);
+                        InputStream is = conn.getInputStream();
+                        BufferedReader br = new BufferedReader(new InputStreamReader(is, "utf-8"));
+                        String line = null;
+                        while ((line = br.readLine()) != null) {
+                            System.out.println("SendFrames Result line : " + line);
+                        }
+
+                        int responseCode = conn.getResponseCode();
+                        Logger.i("SendFrames", "responseCode : " + responseCode);
+                        frameBytes.remove(0);
                     }
-
-                    int responseCode = conn.getResponseCode();
-                    //System.out.println("responseCode : " + responseCode);
-                    Logger.i("CamaraWrapper2.class", "responseCode : " + responseCode);
-
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 } catch (MalformedURLException e) {
@@ -455,8 +537,6 @@ public class CamaraWrapper2 {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                frameCnt++;
-
             }
         }
 

@@ -185,7 +185,7 @@ public class AudioEncoderFromBuffer2 {
                 MediaFormat newFormat = aencoder.getOutputFormat();
                 Log.d(TAG, "Audio encoder output format changed: " + newFormat);
 
-                atrack = encoderCallback.addTrack(newFormat);
+                atrack = encoderCallback.addTrack("Audio", newFormat);
                 encoderCallback.start();
             } else {
                 ByteBuffer outputBuffer = outputBuffers[outputBufferIndex];
@@ -278,7 +278,7 @@ public class AudioEncoderFromBuffer2 {
                     MediaFormat newFormat = aencoder.getOutputFormat();
                     Log.d(TAG, "Audio encoder output format changed: " + newFormat);
 
-                    atrack = encoderCallback.addTrack(newFormat);
+                    atrack = encoderCallback.addTrack("Audio", newFormat);
                     Log.d(TAG, "Audio encoder output format changed atrack : " + atrack);
                     encoderCallback.start();
                 } else {

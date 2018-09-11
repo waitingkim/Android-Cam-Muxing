@@ -275,7 +275,7 @@ public class VideoEncoderFromBuffer2 {
                 // now that we have the Magic Goodies, start the muxer
                 /*mTrackIndex = mMuxer.addTrack(newFormat);
                 mMuxer.start();*/
-                mTrackIndex = encoderCallback.addTrack(newFormat);
+                mTrackIndex = encoderCallback.addTrack("Video", newFormat);
                 Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
                 encoderCallback.start();
                 mMuxerStarted = true;
@@ -303,7 +303,7 @@ public class VideoEncoderFromBuffer2 {
                     if (!mMuxerStarted) {
 //						throw new RuntimeException("muxer hasn't started");
                         MediaFormat newFormat = mMediaCodec.getOutputFormat();
-                        mTrackIndex = encoderCallback.addTrack(newFormat);
+                        mTrackIndex = encoderCallback.addTrack("Video", newFormat);
                         Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
                         encoderCallback.start();
                         mMuxerStarted = true;
@@ -452,7 +452,7 @@ public class VideoEncoderFromBuffer2 {
                 // now that we have the Magic Goodies, start the muxer
                 /*mTrackIndex = mMuxer.addTrack(newFormat);
                 mMuxer.start();*/
-                mTrackIndex = encoderCallback.addTrack(newFormat);
+                mTrackIndex = encoderCallback.addTrack("Video", newFormat);
                 Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
                 encoderCallback.start();
                 mMuxerStarted = true;
@@ -480,7 +480,7 @@ public class VideoEncoderFromBuffer2 {
                     if (!mMuxerStarted) {
 //						throw new RuntimeException("muxer hasn't started");
                         MediaFormat newFormat = mMediaCodec.getOutputFormat();
-                        mTrackIndex = encoderCallback.addTrack(newFormat);
+                        mTrackIndex = encoderCallback.addTrack("Video", newFormat);
                         Log.d(TAG, "encoder output format changed mTrackIndex : " + mTrackIndex);
                         encoderCallback.start();
                         mMuxerStarted = true;
